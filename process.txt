@@ -1,0 +1,19 @@
+Process : 
+
+
+1. Démarchage Client
+2. Installation chez client
+3. creation adhérent chalant + Fiche client CRM + Contrat Air Fiber Access 
+4. Activation Service dans contrat CRM 
+5. Date de premiere facture contrat = date de mise en service + 1 mois arrondi , exemple 22/09/2022 -> 01/11/2022
+6. Lien de paiement envoyée au client
+
+check periodique
+
+
+7. client qui paie -> suggestion d'association entre Client Stripe et Client CRM en commentaire 
+Association manuelle entre référence client Stripe et celle du CRM 
+Association instance abonnement au contrat dans CRM 
+Association Produit CRM et Produit Stripe
+
+8. generation Facture 
