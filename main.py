@@ -28,7 +28,7 @@ logger.info(" --- --------------------------------------------------------------
 parser = argparse.ArgumentParser()
 parser.add_argument("-v","--verbosity", help="increase output verbosity",action="store_true")
 parser.add_argument("-d","--dry", help="perform a dry run",action="store_true")
-parser.add_argument("-m","--mail", help="send invoice per mail to client",action="store_true")
+parser.add_argument("-m","--mail", help="send invoice per mail to client (you can add a contact mail copy in the reference.conf file)",action="store_true")
 parser.add_argument("-p","--planned", help="trigger planned work to ",action="store_true")
 
 args = parser.parse_args()
@@ -58,6 +58,7 @@ config.read('references.conf')
 
 references_dict = config["list"]
 stripe_api_key = config["credentials"]["stripe_api_key"]
+dolibarr_url      = config["credentials"]["dolibarr_url"]
 dolibarr_username = config["credentials"]["dolibarr_username"]
 dolibarr_password = config["credentials"]["dolibarr_password"]
 
@@ -205,7 +206,7 @@ LOGGER.setLevel(logging.CRITICAL)
 
 logger.info("CRM Login")
 driver = webdriver.Edge()
-driver.get("https://crm.slashthd.fr/index.php")
+driver.get(dolibarr_url + "index.php")
 assert "Identifiant" in driver.title
 
 
@@ -222,7 +223,7 @@ current_date = datetime.datetime.now()
 
 if args.planned : 
     logger.info("preparation phase : trigger planned work in CRM")
-    work_url = "https://crm.slashthd.fr/public/cron/cron_run_jobs_by_url.php?securitykey=" + \
+    work_url = dolibarr_url + "/public/cron/cron_run_jobs_by_url.php?securitykey=" + \
         dolibarr_planned_work_key + "&userlogin=" + dolibarr_username + "&id=" + str(dolibarr_planned_work_cron_job_id)
     driver.get(work_url)
     logger.info("temporization 1 sec....")
@@ -234,7 +235,7 @@ link : invoice_link
 for link in invoice_links :
     link.crm_contract_activated == False
     logger.debug("treating contract : " + link.contract_number)
-    driver.get("https://crm.slashthd.fr/contrat/card.php?id=" + str(link.contract_number))
+    driver.get(dolibarr_url + "/contrat/card.php?id=" + str(link.contract_number))
     logger.debug("testing if services are activated")
     #iterating service 
 
