@@ -11,7 +11,7 @@ thanks [https://www.mistergeek.net](https://www.mistergeek.net) for the visibili
 Manual : 
 
 1. get a dolibarr account that can read/write invoices/contracts/clients and get an read Stripe API KEY, put both in a reference.conf file.  an exemple of conf is in the file references_example.conf.
-2. Create your contract associated to your client in dolibarr and get his ID in its URL : https://dolibarr_instance.com/contrat/card.php?id=13 -> here the ID is 13
+2. Create your contract associated to your client in dolibarr and get his ID in its URL : https://dolibarr_instance.com/contrat/card.php?id=13 -> here the ID is 13, with the contract you can create an invoice manually or use recuuring invoice. For now it's working only for monthly subscriptions. i can add the feature if requested.
 3. you have to wait the first payment of your client in Stripe, when it's done get the subscription ID, it looks like something like that : 
 sub_1Lsdhjqsdlkqh2367sdhqjTx
 
