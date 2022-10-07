@@ -206,7 +206,7 @@ LOGGER.setLevel(logging.CRITICAL)
 
 logger.info("CRM Login")
 driver = webdriver.Edge()
-driver.get(dolibarr_url + "index.php")
+driver.get(str(dolibarr_url) + "/index.php")
 assert "Identifiant" in driver.title
 
 
@@ -223,7 +223,7 @@ current_date = datetime.datetime.now()
 
 if args.planned : 
     logger.info("preparation phase : trigger planned work in CRM")
-    work_url = dolibarr_url + "/public/cron/cron_run_jobs_by_url.php?securitykey=" + \
+    work_url = str(dolibarr_url) + "/public/cron/cron_run_jobs_by_url.php?securitykey=" + \
         dolibarr_planned_work_key + "&userlogin=" + dolibarr_username + "&id=" + str(dolibarr_planned_work_cron_job_id)
     driver.get(work_url)
     logger.info("temporization 1 sec....")
