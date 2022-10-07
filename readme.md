@@ -35,7 +35,8 @@ options:
   
   
   1. verify connection to Stripe
-  2. Test All Stripe Subscription référence and gather Data about it ( last payment) 
-  3. Connect to dolibarr via Selenium to Gather contracts last invoices data and their status.
+  2. Test All Stripe Subscription référence and gather Data about it (last payment) 
+  3. Connect to dolibarr via Selenium to Gather contracts data, specifically all invoice associated.
+                if an invoice is "unpaid" and have the same month of the stripe payment it will be registered for processing later. 
   4. make a summary in console of what action will be perfomed
-  5. perform actions : mark corresponding invoices as "paid" and if option is activated send a mail to the client registered in dolibarr. (it uses the Stripe Mail) 
+  5. perform actions : mark corresponding invoices as "paid" with stripe details and if option is activated send a mail to the client registered in dolibarr. (it uses the Stripe Mail) 
