@@ -7,6 +7,9 @@ logger = logging.getLogger(logger_name)
 import requests,json
 import datetime
 import argparse
+import sys
+
+CONF_FILE_PATH = 'references.conf'
 
 
 init_logging()
@@ -51,13 +54,22 @@ logger.info(" --- --------------------------------------------------------------
 logger.info(" --- ---------------------------------- CONF PHASE ---------------------------------- ---")
 logger.info(" --- -------------------------------------------------------------------------------- ---")
 logger.info("Reading Reference ConfIguration File")
+
+#check if file exist
+from os.path import exists
+if not exists(CONF_FILE_PATH) :
+    logger.critical("'reference.conf' not found ! check if the file exist or you execute the script in the right folder. \
+                    \n To build a 'reference.conf' check the example in the folder.")
+    sys.exit(1)
+
 import configparser
 config = configparser.ConfigParser()
 config.optionxform = str # to make the read Case Sensitive 
-config.read('references.conf')
+config.read(CONF_FILE_PATH)
 
-references_dict = config["list"]
-stripe_api_key = config["credentials"]["stripe_api_key"]
+#readign structure of the file
+references_dict   = config["list"]
+stripe_api_key    = config["credentials"]["stripe_api_key"]
 dolibarr_url      = config["credentials"]["dolibarr_url"]
 dolibarr_username = config["credentials"]["dolibarr_username"]
 dolibarr_password = config["credentials"]["dolibarr_password"]
@@ -73,7 +85,7 @@ if config.has_option("credentials", "contact_mail") :
 
 logger.debug("contact mail in configuration is : " + contact_mail)
 
-logger.debug("Reading Stripe subscriptions references with CRM link to  subscription contract")
+logger.debug("Reading CRM contract reference with link to Stripe subscriptions references")
 for reference in  references_dict:
     logger.debug("link reference found : " + reference  + " -> " + references_dict[reference])
 
@@ -109,8 +121,10 @@ class crm_linked_invoice :
 
 class invoice_link :
 
-    stripe_subscription_reference : str
     contract_number               : int
+    stripe_subscription_reference : str
+    is_stripe_link                : bool = True
+    
 
     stripe_customer_ref    : str
     stripe_customer_name   : str
@@ -131,62 +145,68 @@ class invoice_link :
 invoice_links = set()
 
 
-for reference in  references_dict:
-
-    logger.info("retrieving Subscription data of " + reference)
-    url = "https://api.stripe.com/v1/subscriptions/" + reference
-    logger.debug("testing url : '" + url + "'")
-    r = requests.get(url, headers=headers)
- 
-    assert r.status_code == 200
-    subscription_json_data = json.loads(r.text)
-    logger.debug("Subscription Data found : ")
-    logger.debug(json.dumps(subscription_json_data, indent=4 , ensure_ascii=False))
-
-    if subscription_json_data["status"] != "active" :
-        logger.info("subscription not active, going to next")
-        continue
-
-    #retrieving customer data 
-    latest_invoice_reference = subscription_json_data["latest_invoice"]
-    logger.debug("latest invoice reference found : " + latest_invoice_reference)
-    url = "https://api.stripe.com/v1/invoices/" + latest_invoice_reference
-    r = requests.get(url, headers=headers)
-    assert r.status_code == 200
-
-    latest_invoice_json_data = json.loads(r.text)
-    logger.debug("latest invoice Data found : ")
-    logger.debug(json.dumps(latest_invoice_json_data, indent=4, ensure_ascii=False))
-
-    #TODO verfiy invoice status to "paid"
-
+for reference in references_dict:
+    
     link = invoice_link()
+    link.contract_number = reference
+
+    if references_dict[reference] != "0" :
+        logger.info("retrieving Subscription data for reference :  " + references_dict[reference] + " ")
+        url = "https://api.stripe.com/v1/subscriptions/" + references_dict[reference]
+        logger.debug("testing url : '" + url + "'")
+        r = requests.get(url, headers=headers)
+    
+        assert r.status_code == 200
+        subscription_json_data = json.loads(r.text)
+        logger.debug("Subscription Data found : ")
+        logger.debug(json.dumps(subscription_json_data, indent=4 , ensure_ascii=False))
+
+        if subscription_json_data["status"] != "active" :
+            logger.info("subscription not active, going to next")
+            continue
+
+        #retrieving customer data 
+        latest_invoice_reference = subscription_json_data["latest_invoice"]
+        logger.debug("latest invoice reference found : " + latest_invoice_reference)
+        url = "https://api.stripe.com/v1/invoices/" + latest_invoice_reference
+        r = requests.get(url, headers=headers)
+        assert r.status_code == 200
+
+        latest_invoice_json_data = json.loads(r.text)
+        logger.debug("latest invoice Data found : ")
+        logger.debug(json.dumps(latest_invoice_json_data, indent=4, ensure_ascii=False))
+        
+        link.stripe_subscription_reference = references_dict[reference]
+        link.stripe_paid_amount     = float(float(latest_invoice_json_data["amount_paid"]) / 100 )
+        link.stripe_epoch_date      = latest_invoice_json_data["created"]
+        link.stripe_customer_name   = latest_invoice_json_data["customer_name"]
+        link.stripe_customer_mail   = latest_invoice_json_data["customer_email"]
+        link.stripe_invoice_url     = latest_invoice_json_data["hosted_invoice_url"]
+        link.stripe_invoice_number  = latest_invoice_json_data["number"]
 
 
-    link.stripe_subscription_reference = reference
-    link.contract_number        = references_dict[reference]
-    link.stripe_paid_amount     = float(float(latest_invoice_json_data["amount_paid"]) / 100 )
-    link.stripe_epoch_date      = latest_invoice_json_data["created"]
-    link.stripe_customer_name   = latest_invoice_json_data["customer_name"]
-    link.stripe_customer_mail   = latest_invoice_json_data["customer_email"]
-    link.stripe_invoice_url     = latest_invoice_json_data["hosted_invoice_url"]
-    link.stripe_invoice_number  = latest_invoice_json_data["number"]
-
-
-    logger.info("latest invoice customer info : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
-    logger.info("latest invoice paid amount   : " + str(link.stripe_paid_amount) + latest_invoice_json_data["currency"])
-    logger.info("latest invoice payment date  : " + str(datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))))
-    logger.info("latest invoice url : " + link.stripe_invoice_url )
+        logger.info("latest invoice customer info : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
+        logger.info("latest invoice paid amount   : " + str(link.stripe_paid_amount) + latest_invoice_json_data["currency"])
+        logger.info("latest invoice payment date  : " + str(datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))))
+        logger.info("latest invoice url : " + link.stripe_invoice_url )
+        logger.info(" ----------- Subscription Data OK")
+        
+    elif references_dict[reference] == "0" :
+        logger.info("contract number : " + str(link.contract_number) + " is associated with no stripe subscriptions")
+        link.is_stripe_link = False
+        logger.info(" ----------- Free Contract OK")
+        
+    else :
+        logger.warning("unknown formatting for the contract : " + reference)
+        continue   
 
     # subscription reference - dolibarr contract reference - name - mail - amount - date of payment. 
-
-
 
 
     invoice_links.add(link)
 
 
-    logger.info(" ----------- Subscription Data OK")
+
     
 
 logger.info("Stripe Phase OK")
@@ -242,8 +262,15 @@ for link in invoice_links :
 
     contract_lines = driver.find_elements(By.XPATH,"//div[contains(@id,'contrat-lines-container')]/div")
     logger.info(str(len(contract_lines)) + " service line found")
-    for line in contract_lines : 
-        service_name   = line.find_element(By.CLASS_NAME,"classfortooltip").text
+    for line in contract_lines :
+        
+        try :
+            service_name   = line.find_element(By.CLASS_NAME,"classfortooltip").text
+        except Exception :
+            element = line.find_element(By.CLASS_NAME,"fa-concierge-bell")
+            service_name = element.find_element(By.XPATH,'..').text
+            
+            
         service_status = line.find_element(By.CLASS_NAME,"badge-status").text
 
         logger.info(service_name)
@@ -281,15 +308,15 @@ for link in invoice_links :
             current_invoice.unpaid = True
     
         logger.info("-----")
-        logger.info("CRM linked invoice for customer : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
+        if link.is_stripe_link :
+            logger.info("CRM linked invoice for customer : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
         logger.info("CRM linked invoice url : " + current_invoice.url)
         logger.info("CRM linked invoice date : " + str(current_invoice.amount))
         logger.info("CRM linked invoice amount : " + str(current_invoice.date))
         logger.info("CRM linked invoice unpaid ?  : " + str(current_invoice.unpaid))
         logger.info("-----")
     
-
-        stripe_date  = datetime.datetime.fromtimestamp(link.stripe_epoch_date)
+      
 
         #checking if new invoice is needed for the month
         if current_invoice.date.year == current_date.year :
@@ -297,19 +324,36 @@ for link in invoice_links :
                 logger.debug("invoice link does not need a new invoice for this month")
                 link.crm_needs_new_invoice = False #TODO check all month since last invoice
 
+
+        if link.is_stripe_link :
+            stripe_date  = datetime.datetime.fromtimestamp(link.stripe_epoch_date)
         #checking if invoice is eligible to update
-        if current_invoice.date.year == stripe_date.year :
-            if current_invoice.date.month == stripe_date.month :
-                if current_invoice.date.day <= stripe_date.day :
+            if current_invoice.date.year == stripe_date.year :
+                if current_invoice.date.month == stripe_date.month :
+                    if current_invoice.date.day <= stripe_date.day :
 
-                    if current_invoice.unpaid : 
-                        
-                        if link.stripe_paid_amount == current_invoice.amount :
+                        if current_invoice.unpaid : 
+                            
+                            if link.stripe_paid_amount == current_invoice.amount :
 
-                            logger.info("Current crm invoice is unpaid, and corresponding to same month and amount as stripe payment")
-                            logger.info(" ## Target invoice FOUND !  ##")
-                            link.crm_needs_update = True
-                            link.crm_target_invoice = current_invoice
+                                logger.info("Current crm invoice is unpaid, and corresponding to same month and amount as stripe payment")
+                                logger.info(" ## Target invoice FOUND !  ##")
+                                link.crm_needs_update = True
+                                link.crm_target_invoice = current_invoice
+        else :
+            #for free contract
+            if current_invoice.date.year == current_date.year :
+                if current_invoice.date.month == current_date.month :
+                    if current_date.day >= current_invoice.date.day :
+
+                        if current_invoice.unpaid : 
+                
+                            if current_invoice.amount == 0:
+
+                                logger.info("current crm invoice is unpaid for a 0 amount (Free Contract)")
+                                logger.info(" ## Target invoice FOUND !  ##")
+                                link.crm_needs_update = True
+                                link.crm_target_invoice = current_invoice
             
 
 
@@ -332,13 +376,17 @@ for link in invoice_links :
             action = True
             logger.info(" ## ------------------------------- ##")
             logger.info("@@ INVOICE UPDATE PENDING : ")
-            logger.info("stripe invoice customer info : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
-            logger.info("stripe invoice paid amount   : " + str(link.stripe_paid_amount) + " " + latest_invoice_json_data["currency"])
-            logger.info("stripe invoice payment date  : " + str(datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))))
+
             logger.info("CRM linked invoice url : " + link.crm_target_invoice.url)
             logger.info("CRM linked invoice date : " + str(link.crm_target_invoice.amount))
             logger.info("CRM linked invoice amount : " + str(link.crm_target_invoice.date))
             logger.info("CRM linked invoice unpaid ?  : " + str(link.crm_target_invoice.unpaid))
+            if link.is_stripe_link :
+                logger.info("stripe invoice customer info : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
+                logger.info("stripe invoice paid amount   : " + str(link.stripe_paid_amount) + " " + latest_invoice_json_data["currency"])
+                logger.info("stripe invoice payment date  : " + str(datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))))
+            else :
+                logger.info("Invoice is from FREE CONTRACT")
             logger.info(" ## ------------------------------- ##")
         
         if link.crm_needs_new_invoice :
@@ -371,32 +419,46 @@ for link in invoice_links :
         if link.crm_needs_update :
 
             logger.info(" ## ------ Creating Payment ------ ##")
-            logger.info("stripe invoice customer info : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
-            logger.info("stripe invoice paid amount   : " + str(link.stripe_paid_amount) + " " + latest_invoice_json_data["currency"])
-            logger.info("stripe invoice payment date  : " + str(datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))))
             logger.info("CRM linked invoice url : " + link.crm_target_invoice.url)
             logger.info("CRM linked invoice date : " + str(link.crm_target_invoice.amount))
             logger.info("CRM linked invoice amount : " + str(link.crm_target_invoice.date))
             logger.info("CRM linked invoice unpaid ?  : " + str(link.crm_target_invoice.unpaid))
+            if link.is_stripe_link :
+                logger.info("stripe invoice customer info : " + link.stripe_customer_name + " - " + link.stripe_customer_mail)
+                logger.info("stripe invoice paid amount   : " + str(link.stripe_paid_amount) + " " + latest_invoice_json_data["currency"])
+                logger.info("stripe invoice payment date  : " + str(datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))))
+            else :
+                logger.info("Invoice is from FREE CONTRACT")
 
  
 
-            driver.get(link.crm_target_invoice.url)
-            pay_url = driver.find_element(By.XPATH, "//*[text()='Saisir règlement']").get_attribute("href")
-            driver.get(pay_url)
-            stripe_payment_date = datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))
-            date_string = format(stripe_payment_date,'{%d/%m/%Y}')
-            driver.find_element(By.ID, "re").send_keys(date_string)
-            driver.find_element(By.NAME, "comment").send_keys("Payment treated by automation - Slash-DoliStripe \n stripe invoice URL : " + link.stripe_invoice_url )
-            driver.find_element(By.CLASS_NAME,'AutoFillAmout').click()
-            driver.find_element(By.NAME, "num_paiement").send_keys(link.stripe_invoice_number)
-            driver.find_element(By.XPATH,'//input[@value="Payer"]').click()
-            driver.find_element(By.XPATH,'//input[@value="Valider"]').click()
+            
+            if link.is_stripe_link :
+                driver.get(link.crm_target_invoice.url)
+                pay_url = driver.find_element(By.XPATH, "//*[text()='Saisir règlement']").get_attribute("href")
+                driver.get(pay_url)
+                stripe_payment_date = datetime.datetime.fromtimestamp(int(link.stripe_epoch_date))
+                date_string = format(stripe_payment_date,'{%d/%m/%Y}')
+                driver.find_element(By.ID, "re").send_keys(date_string)
+                driver.find_element(By.NAME, "comment").send_keys("Payment treated by automation - Slash-DoliStripe \n stripe invoice URL : " + link.stripe_invoice_url )
+                #en cas de plusieur facture impayée dont celles qui n'ont rien a voir avec le contrat
+                target_invoice_line = driver.find_element(By.CLASS_NAME,'highlight') 
+                target_invoice_line.find_element(By.CLASS_NAME,'AutoFillAmout').click()
+                driver.find_element(By.NAME, "num_paiement").send_keys(link.stripe_invoice_number)
+                driver.find_element(By.XPATH,'//input[@value="Payer"]').click()
+                driver.find_element(By.XPATH,'//input[@value="Valider"]').click()
+            else : 
+                driver.get(link.crm_target_invoice.url + "&action=paid")
+                buttons = driver.find_element(By.CLASS_NAME,"ui-dialog-buttonset")
+                logger.debug(buttons.get_attribute("innerHTML"))
+                buttons.find_element(By.XPATH,'button[contains(text(), "Oui")]').click()
 
             if args.mail:
                 logger.info("sending email to client...")
                 driver.find_element(By.XPATH, "//*[text()='Envoyer email']").click()
-                driver.find_element(By.ID, "sendto").send_keys(link.stripe_customer_mail)
+                if link.is_stripe_link :
+                    #here we add the stripe mail, if there is not stripe mail the crm mail will prevail. 
+                    driver.find_element(By.ID, "sendto").send_keys(link.stripe_customer_mail)
                 if contact_mail is not None : 
                     driver.find_element(By.ID, "sendtocc").send_keys(contact_mail)
                 driver.find_element(By.ID, "sendmail").click()
